@@ -44,7 +44,7 @@ function saveMemory() {
 }
 
 // ============================
-// PERSONALITY (Same for both)
+// PERSONALITY
 // ============================
 
 const SYSTEM_PROMPT = `
@@ -63,10 +63,10 @@ Rules:
 `;
 
 // ============================
-// READY
+// READY - FIXED (clientReady instead of ready)
 // ============================
 
-client.once("ready", () => {
+client.once("clientReady", () => {
     console.log(`${client.user.tag} online with BOTH Llama (Fast) + Gemini 2.5 Flash (Smart)!`);
 });
 
@@ -183,9 +183,8 @@ client.on("messageCreate", async (message) => {
 
         saveMemory();
 
-        // Send reply with model info (optional - remove if you don't want to show)
-        const modelTag = useGemini ? "🧠 [Gemini]" : "⚡ [Llama]";
-        await message.reply(`${modelTag} ${reply}`);
+        // Reply WITHOUT any tag (No [LLama] or [Gemini] showing)
+        await message.reply(reply);
 
     } catch (err) {
         console.error(err);
