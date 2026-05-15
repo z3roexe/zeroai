@@ -129,14 +129,6 @@ client.on(
 
     if (message.author.bot) return;
 
-    const AI_CHANNEL_ID =
-      "PASTE_CHANNEL_ID_HERE";
-
-    if (
-      message.channel.id !==
-      AI_CHANNEL_ID
-    ) return;
-
     const prompt =
       message.content;
 
