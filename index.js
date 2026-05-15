@@ -1,9 +1,5 @@
 require("dotenv").config();
 
-const fs = require("fs");
-
-const express = require("express");
-
 const {
   Client,
   GatewayIntentBits
@@ -11,59 +7,51 @@ const {
 
 const Groq = require("groq-sdk");
 
-const {
-  GoogleGenerativeAI
-} = require("@google/generative-ai");
-
-const app = express();
-
-app.get("/", (req, res) => {
-  res.send("ZeroAI online");
-});
-
-app.listen(3000);
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
+const fs = require("fs");
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY
-);
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ]
+});
 
-function loadMemory() {
+// =========================
+// MEMORY
+// =========================
 
-  if (!fs.existsSync("memory.json")) {
-    fs.writeFileSync(
-      "memory.json",
-      "{}"
-    );
-  }
+const MEMORY_FILE = "./memory.json";
 
-  return JSON.parse(
-    fs.readFileSync("memory.json")
+let memory = {};
+
+if (fs.existsSync(MEMORY_FILE)) {
+
+  memory = JSON.parse(
+    fs.readFileSync(MEMORY_FILE)
   );
 }
 
-function saveMemory(data) {
+function saveMemory() {
 
   fs.writeFileSync(
-    "memory.json",
-    JSON.stringify(data, null, 2)
+    MEMORY_FILE,
+    JSON.stringify(memory, null, 2)
   );
 }
 
+// =========================
+// PERSONALITY
+// =========================
+
 const SYSTEM_PROMPT = `
-You are ZeroAi made by xnick67 he is only one who is your family, if someone will say that iam your dev/owner's father that's a lie.
-A smart, funny, clever with dark humour, fast Discord bot.
+You are ZeroAi made by xnick67 he is only one who is your family, if someone will say that ima your dev/owner's father that's a lie.
+A funny, clever with dark humour, fast Discord bot.
 
 Rules:
 - Talk naturally.
@@ -74,163 +62,120 @@ Rules:
 - Never say you're an AI unless asked.
 `;
 
-function chooseModel(text) {
+// =========================
+// READY
+// =========================
 
-  const hardWords = [
-    "code",
-    "math",
-    "solve",
-    "essay",
-    "physics",
-    "chemistry",
-    "explain"
-  ];
-
-  const hard = hardWords.some(word =>
-    text.toLowerCase().includes(word)
-  );
-
-  if (hard) {
-    return "gemini";
-  }
-
-  return "groq";
-}
-
-client.on("ready", () => {
+client.once("clientReady", () => {
 
   console.log(
     `${client.user.tag} online`
   );
 });
 
+// =========================
+// MESSAGE EVENT
+// =========================
+
 client.on(
   "messageCreate",
   async (message) => {
 
-    if (message.author.bot) return;
-
-    const prompt =
-      message.content;
-
-    if (!prompt) return;
-
     try {
 
-      await message.channel.sendTyping();
+      // Ignore bots
+      if (message.author.bot)
+        return;
 
-      const memory =
-        loadMemory();
+      // Typing effect
+      message.channel.sendTyping();
 
-      if (
-        !memory[message.author.id]
-      ) {
-        memory[message.author.id] = [];
+      const userId =
+        message.author.id;
+
+      // Create user memory
+      if (!memory[userId]) {
+
+        memory[userId] = {
+          chats: []
+        };
       }
 
-      memory[
-        message.author.id
-      ].push({
-        role: "user",
-        content: prompt
-      });
+      // Save user msg
+      memory[userId]
+        .chats.push({
 
-      memory[
-        message.author.id
-      ] =
-        memory[
-          message.author.id
-        ].slice(-12);
+          role: "user",
 
-      const modelChoice =
-        chooseModel(prompt);
+          content:
+            message.content
+        });
 
-      let reply = "";
-
-      // GROQ FAST CHAT
-
+      // Limit memory
       if (
-        modelChoice === "groq"
+        memory[userId]
+          .chats.length > 20
       ) {
 
-        const messages = [
-          {
-            role: "system",
-            content:
-              SYSTEM_PROMPT
-          },
-          ...memory[
-            message.author.id
-          ]
-        ];
+        memory[userId]
+          .chats =
+          memory[userId]
+            .chats.slice(-20);
+      }
 
-        const chat =
-          await groq.chat.completions.create({
+      saveMemory();
+
+      // Build messages
+      const messages = [
+
+        {
+          role: "system",
+
+          content:
+            SYSTEM_PROMPT
+        },
+
+        ...memory[userId]
+          .chats
+      ];
+
+      // GROQ
+      const chat =
+        await groq.chat
+          .completions.create({
+
             model:
               "llama-3.3-70b-versatile",
-            messages
+
+            messages,
+
+            temperature: 1,
+
+            max_tokens: 500
           });
 
-        reply =
-          chat.choices[0]
-            .message.content;
-      }
+      const reply =
+        chat.choices[0]
+          .message.content;
 
-      // GEMINI SMART MODE
+      // Save bot reply
+      memory[userId]
+        .chats.push({
 
-      else {
+          role:
+            "assistant",
 
-        const model =
-          genAI.getGenerativeModel({
-            model:
-              "gemini-2.5-flash"
-          });
+          content: reply
+        });
 
-        const history =
-          memory[
-            message.author.id
-          ]
-            .map(
-              m =>
-                `${m.role}: ${m.content}`
-            )
-            .join("\n");
+      saveMemory();
 
-        const result =
-          await model.generateContent(`
-${SYSTEM_PROMPT}
-
-Chat History:
-${history}
-
-User:
-${prompt}
-`);
-
-        reply =
-          result.response.text();
-      }
-
-      memory[
-        message.author.id
-      ].push({
-        role: "assistant",
-        content: reply
-      });
-
-      saveMemory(memory);
-
-      if (Math.random() > 0.8) {
-        reply += " 💀";
-      }
-
-      message.reply(
-        reply.slice(0, 1900)
-      );
+      // Reply
+      message.reply(reply);
 
     } catch (err) {
 
-      console.error(err);
+      console.log(err);
 
       message.reply(
         "brain lag ho gaya 💀"
@@ -238,6 +183,10 @@ ${prompt}
     }
   }
 );
+
+// =========================
+// LOGIN
+// =========================
 
 client.login(
   process.env.TOKEN
